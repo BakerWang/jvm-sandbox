@@ -1,7 +1,6 @@
 package com.alibaba.jvm.sandbox.core;
 
 import com.alibaba.jvm.sandbox.api.Information;
-import com.alibaba.jvm.sandbox.api.event.Event;
 import com.alibaba.jvm.sandbox.core.util.FeatureCodec;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -9,13 +8,11 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
-import org.apache.tools.ant.DirectoryScanner;
 
 import java.io.File;
 import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.nio.charset.Charset;
+import java.util.*;
 
 /**
  * 内核启动配置
@@ -23,13 +20,14 @@ import java.util.Properties;
  */
 public class CoreConfigure {
 
-    private static final String KEY_NAMESPACE="namespace";
-    private static final String DEFAULT_VAL_NAMESPACE="default";
+    private static final String KEY_NAMESPACE = "namespace";
+    private static final String DEFAULT_VAL_NAMESPACE = "default";
 
     private static final String KEY_SANDBOX_HOME = "sandbox_home";
     private static final String KEY_LAUNCH_MODE = "mode";
     private static final String KEY_SERVER_IP = "server.ip";
     private static final String KEY_SERVER_PORT = "server.port";
+    private static final String KEY_SERVER_CHARSET = "server.charset";
 
     private static final String KEY_SYSTEM_MODULE_LIB_PATH = "system_module";
     private static final String KEY_USER_MODULE_LIB_PATH = "user_module";
@@ -37,71 +35,103 @@ public class CoreConfigure {
     private static final String KEY_CFG_LIB_PATH = "cfg";
     private static final String VAL_LAUNCH_MODE_AGENT = "agent";
     private static final String VAL_LAUNCH_MODE_ATTACH = "attach";
-    private static final String KEY_EVENT_POOL_ENABLE = "event.pool.enable";
-
-    // ------------------------------------- 事件池配置 -------------------------------------
-    private static final String KEY_EVENT_POOL_MAX_TOTAL = "event.pool.max.total";
-    private static final String KEY_EVENT_POOL_MIN_IDLE_PER_EVENT = "event.pool.min.idle.per.event";
-    private static final int DEFAULT_VAL_EVENT_POOL_MIN_IDLE_PER_EVENT = 50;
-    private static final String KEY_EVENT_POOL_MAX_IDLE_PER_EVENT = "event.pool.max.idle.per.event";
-    private static final int DEFAULT_VAL_EVENT_POOL_MAX_IDLE_PER_EVENT = 100;
-    private static final String KEY_EVENT_POOL_MAX_TOTAL_PER_EVENT = "event.pool.max.total.per.event";
-    private static final int DEFAULT_VAL_EVENT_POOL_MAX_TOTAL_PER_EVENT = 2000;
 
     private static final String KEY_UNSAFE_ENABLE = "unsafe.enable";
 
-    // 受保护key数组，在保护key范围之内，如果前端已经传递过参数了，只能认前端，后端无法修改
-    private static final String[] PROTECT_KEY_ARRAY = {KEY_NAMESPACE, KEY_SANDBOX_HOME, KEY_LAUNCH_MODE, KEY_SERVER_IP, KEY_SERVER_PORT};
+    // 受保护key数组，在保护key范围之内，以用户传递的配置为准，系统配置不允许覆盖
+    private static final String[] PROTECT_KEY_ARRAY = {KEY_NAMESPACE, KEY_SANDBOX_HOME, KEY_LAUNCH_MODE, KEY_SERVER_IP, KEY_SERVER_PORT, KEY_SERVER_CHARSET};
+
+    // 用户配置和系统默认配置都可以，需要进行合并的key，例如user_module
+    private static final String[] MULTI_KEY_ARRAY = {KEY_USER_MODULE_LIB_PATH};
 
     private static final FeatureCodec codec = new FeatureCodec(';', '=');
 
-    private final Map<String, String> featureMap;
+    private final Map<String, String> featureMap = new LinkedHashMap<String, String>();
 
-    private CoreConfigure(final String featureString) {
-        this.featureMap = codec.toMap(featureString);
+    private CoreConfigure(final String featureString,
+                          final String propertiesFilePath) {
+        final Map<String, String> featureMap = toFeatureMap(featureString);
+        final Map<String, String> propertiesMap = toPropertiesMap(propertiesFilePath);
+        this.featureMap.putAll(merge(featureMap, propertiesMap));
     }
 
-    private static volatile CoreConfigure instance;
-
-    public static CoreConfigure toConfigure(final String featureString, final String propertiesFilePath) {
-        return instance = mergePropertiesFile(new CoreConfigure(featureString), propertiesFilePath);
+    private Map<String, String> toFeatureMap(String featureString) {
+        return codec.toMap(featureString);
     }
 
-    // 从配置文件中合并配置到CoreConfigure中
-    private static CoreConfigure mergePropertiesFile(final CoreConfigure cfg, final String propertiesFilePath) {
-        cfg.featureMap.putAll(propertiesToStringMap(fetchProperties(propertiesFilePath)));
-        return cfg;
-    }
+    private Map<String, String> toPropertiesMap(String propertiesFilePath) {
+        final Map<String, String> propertiesMap = new LinkedHashMap<String, String>();
 
-    // 从指定配置文件路径中获取配置信息
-    private static Properties fetchProperties(final String propertiesFilePath) {
+        if(null == propertiesFilePath) {
+            return propertiesMap;
+        }
+
+        final File propertiesFile = new File(propertiesFilePath);
+        if (!propertiesFile.exists()
+                || !propertiesFile.canRead()) {
+            return propertiesMap;
+        }
+
+
+        // 从指定配置文件路径中获取配置信息
         final Properties properties = new Properties();
         InputStream is = null;
         try {
-            is = FileUtils.openInputStream(new File(propertiesFilePath));
+            is = FileUtils.openInputStream(propertiesFile);
             properties.load(is);
         } catch (Throwable cause) {
             // cause.printStackTrace(System.err);
         } finally {
             IOUtils.closeQuietly(is);
         }
-        return properties;
+
+        // 转换为Map
+        for (String key : properties.stringPropertyNames()) {
+            propertiesMap.put(key, properties.getProperty(key));
+        }
+
+        return propertiesMap;
     }
 
-    // 配置转map
-    private static Map<String, String> propertiesToStringMap(final Properties properties) {
-        final Map<String, String> map = new HashMap<String, String>();
-        for (String key : properties.stringPropertyNames()) {
+    private Map<String, String> merge(Map<String, String> featureMap, Map<String, String> propertiesMap) {
 
-            // 过滤掉受保护的key
-            if (ArrayUtils.contains(PROTECT_KEY_ARRAY, key)
-                    && map.containsKey(key)) {
+        // 以featureMap配置为准
+        final Map<String, String> mergeMap = new LinkedHashMap<String, String>(featureMap);
+
+        // 合并propertiesMap
+        for (final Map.Entry<String, String> propertiesEntry : propertiesMap.entrySet()) {
+
+            // 如果是受保护的KEY，则以featureMap中的非空值为准
+            if (mergeMap.containsKey(propertiesEntry.getKey())
+                    && ArrayUtils.contains(PROTECT_KEY_ARRAY, propertiesEntry.getKey())) {
                 continue;
             }
 
-            map.put(key, properties.getProperty(key));
+            // 如果是多值合并的KEY，则不进行覆盖，转为合并
+            else if (ArrayUtils.contains(MULTI_KEY_ARRAY, propertiesEntry.getKey())
+                    && mergeMap.containsKey(propertiesEntry.getKey())) {
+                mergeMap.put(
+                        propertiesEntry.getKey(),
+                        mergeMap.get(propertiesEntry.getKey()) + ";" + propertiesEntry.getValue()
+                );
+                continue;
+            }
+
+            // 合并K,V
+            else {
+                mergeMap.put(propertiesEntry.getKey(), propertiesEntry.getValue());
+            }
+
         }
-        return map;
+
+        return mergeMap;
+
+    }
+
+    private static volatile CoreConfigure instance;
+
+    public static CoreConfigure toConfigure(final String featureString, final String propertiesFilePath) {
+        return instance = new CoreConfigure(featureString, propertiesFilePath);
     }
 
     public static CoreConfigure getInstance() {
@@ -110,6 +140,7 @@ public class CoreConfigure {
 
     /**
      * 获取容器的命名空间
+     *
      * @return 容器的命名空间
      */
     public String getNamespace() {
@@ -166,16 +197,20 @@ public class CoreConfigure {
      * @return 用户模块加载文件/目录(集合)
      */
     public synchronized File[] getUserModuleLibFiles() {
-        final DirectoryScanner scanner = new DirectoryScanner();
-        scanner.setIncludes(getUserModuleLibPaths());
-        scanner.setCaseSensitive(false);
-        scanner.scan();
-        final String[] filePaths = scanner.getIncludedDirectories();
-        final File[] files = new File[filePaths.length];
-        for (int index = 0; index < filePaths.length; index++) {
-            files[index] = new File(filePaths[index]);
+
+        final Collection<File> foundModuleJarFiles = new LinkedHashSet<File>();
+        for (final String path : getUserModuleLibPaths()) {
+            final File fileOfPath = new File(path);
+            if (fileOfPath.isDirectory()) {
+                foundModuleJarFiles.addAll(FileUtils.listFiles(new File(path), new String[]{"jar"}, false));
+            } else {
+                if (StringUtils.endsWithIgnoreCase(fileOfPath.getPath(), ".jar")) {
+                    foundModuleJarFiles.add(fileOfPath);
+                }
+            }
         }
-        return GET_USER_MODULE_LIB_FILES_CACHE = files;
+
+        return GET_USER_MODULE_LIB_FILES_CACHE = foundModuleJarFiles.toArray(new File[]{});
     }
 
     // 用户模块加载文件/目录缓存集合
@@ -243,45 +278,6 @@ public class CoreConfigure {
         return Information.Mode.ATTACH;
     }
 
-
-    public int getEventPoolMaxTotal() {
-        return NumberUtils.toInt(
-                featureMap.get(KEY_EVENT_POOL_MAX_TOTAL),
-                getEventPoolMaxTotalPerEvent() * Event.Type.values().length
-        );
-    }
-
-    public int getEventPoolMinIdlePerEvent() {
-        return NumberUtils.toInt(
-                featureMap.get(KEY_EVENT_POOL_MIN_IDLE_PER_EVENT),
-                DEFAULT_VAL_EVENT_POOL_MIN_IDLE_PER_EVENT
-        );
-    }
-
-    public int getEventPoolMaxIdlePerEvent() {
-        return NumberUtils.toInt(
-                featureMap.get(KEY_EVENT_POOL_MAX_IDLE_PER_EVENT),
-                DEFAULT_VAL_EVENT_POOL_MAX_IDLE_PER_EVENT
-        );
-    }
-
-    public int getEventPoolMaxTotalPerEvent() {
-        return NumberUtils.toInt(
-                featureMap.get(KEY_EVENT_POOL_MAX_TOTAL_PER_EVENT),
-                DEFAULT_VAL_EVENT_POOL_MAX_TOTAL_PER_EVENT
-        );
-    }
-
-
-    /**
-     * 是否启用事件池
-     *
-     * @return event.pool.enable
-     */
-    public boolean isEventPoolEnable() {
-        return BooleanUtils.toBoolean(featureMap.get(KEY_EVENT_POOL_ENABLE));
-    }
-
     /**
      * 是否启用Unsafe功能
      *
@@ -327,6 +323,19 @@ public class CoreConfigure {
      */
     public String getProviderLibPath() {
         return featureMap.get(KEY_PROVIDER_LIB_PATH);
+    }
+
+    /**
+     * 获取服务器编码
+     *
+     * @return 服务器编码
+     */
+    public Charset getServerCharset() {
+        try {
+            return Charset.forName(featureMap.get(KEY_SERVER_CHARSET));
+        } catch (Exception cause) {
+            return Charset.defaultCharset();
+        }
     }
 
 }

@@ -1,6 +1,7 @@
 package com.alibaba.jvm.sandbox.core.util;
 
-import com.alibaba.jvm.sandbox.core.enhance.UnCaughtException;
+import com.alibaba.jvm.sandbox.api.listener.EventListener;
+import com.alibaba.jvm.sandbox.core.enhance.annotation.Interrupted;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -8,7 +9,8 @@ import java.lang.reflect.Method;
 
 /**
  * 反射工具类
- * Created by luanjia@taobao.com on 16/5/21.
+ *
+ * @author luanjia@taobao.com
  */
 public class SandboxReflectUtils {
 
@@ -118,6 +120,16 @@ public class SandboxReflectUtils {
             }
         }
 
+    }
+
+    /**
+     * 判断是否是中断式事件处理器
+     *
+     * @param listenerClass 事件监听器类型
+     * @return TRUE:中断式;FALSE:非中断式
+     */
+    public static boolean isInterruptEventHandler(final Class<? extends EventListener> listenerClass) {
+        return listenerClass.isAnnotationPresent(Interrupted.class);
     }
 
 }

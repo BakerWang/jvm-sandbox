@@ -1,11 +1,7 @@
 package com.alibaba.jvm.sandbox.core.enhance.weaver.asm;
 
 import com.alibaba.jvm.sandbox.api.event.Event;
-import com.alibaba.jvm.sandbox.api.filter.Filter;
 import com.alibaba.jvm.sandbox.core.enhance.weaver.CodeLock;
-import com.alibaba.jvm.sandbox.core.util.BitUtils;
-import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.AdviceAdapter;
 import org.objectweb.asm.commons.JSRInlinerAdapter;
@@ -15,11 +11,10 @@ import org.slf4j.LoggerFactory;
 import java.com.alibaba.jvm.sandbox.spy.Spy;
 import java.util.ArrayList;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.alibaba.jvm.sandbox.util.SandboxStringUtils.toJavaClassName;
-import static com.alibaba.jvm.sandbox.util.SandboxStringUtils.toJavaClassNameArray;
+import static com.alibaba.jvm.sandbox.core.util.SandboxStringUtils.toJavaClassName;
 import static org.apache.commons.lang3.ArrayUtils.contains;
+import static org.apache.commons.lang3.StringUtils.join;
 
 /**
  * 用于Call的代码锁
@@ -44,10 +39,10 @@ class CallAsmCodeLock extends AsmCodeLock {
  */
 class AsmTryCatchBlock {
 
-    protected final Label start;
-    protected final Label end;
-    protected final Label handler;
-    protected final String type;
+    final Label start;
+    final Label end;
+    final Label handler;
+    final String type;
 
     AsmTryCatchBlock(Label start, Label end, Label handler, String type) {
         this.start = start;
@@ -67,15 +62,11 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private final int targetClassLoaderObjectID;
+    private final String namespace;
     private final int listenerId;
-    private final String targetClassInternalName;
     private final String targetJavaClassName;
-    private final Type targetClassAsmType;
-    private final Filter filter;
-    private final AtomicBoolean reWriteMark;
-
-    private final String uniqueCodePrefix;
-    private final Set<String> affectMethodUniqueSet;
+    private final Set<String> signCodes;
+    private final Event.Type[] eventTypeArray;
 
     // 是否支持LINE_EVENT
     // LINE_EVENT需要对Class做特殊的增强，所以需要在这里做特殊的判断
@@ -90,24 +81,20 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
 
     public EventWeaver(final int api,
                        final ClassVisitor cv,
+                       final String namespace,
                        final int listenerId,
                        final int targetClassLoaderObjectID,
                        final String targetClassInternalName,
-                       final Filter filter,
-                       final AtomicBoolean reWriteMark,
-                       final String uniqueCodePrefix,
-                       final Set<String> affectMethodUniqueSet,
+                       final Set<String/*BehaviorStructure#getSignCode()*/> signCodes,
                        final Event.Type[] eventTypeArray) {
         super(api, cv);
         this.targetClassLoaderObjectID = targetClassLoaderObjectID;
+        this.namespace = namespace;
         this.listenerId = listenerId;
-        this.targetClassInternalName = targetClassInternalName;
-        this.targetClassAsmType = Type.getObjectType(targetClassInternalName);
         this.targetJavaClassName = toJavaClassName(targetClassInternalName);
-        this.filter = filter;
-        this.reWriteMark = reWriteMark;
-        this.uniqueCodePrefix = uniqueCodePrefix;
-        this.affectMethodUniqueSet = affectMethodUniqueSet;
+        this.signCodes = signCodes;
+        this.eventTypeArray = eventTypeArray;
+
         this.isLineEnable = contains(eventTypeArray, Event.Type.LINE);
         this.hasCallBefore = contains(eventTypeArray, Event.Type.CALL_BEFORE);
         this.hasCallReturn = contains(eventTypeArray, Event.Type.CALL_RETURN);
@@ -115,84 +102,43 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
         this.isCallEnable = hasCallBefore || hasCallReturn || hasCallThrows;
     }
 
-    /**
-     * 获取参数类型名称数组
-     *
-     * @return 参数类型名称数组
-     */
-    private String[] getParameterTypeArray(String desc) {
-        final Type[] typeArray = Type.getArgumentTypes(desc);
-        if (ArrayUtils.isEmpty(typeArray)) {
-            return null;
+    private boolean isMatchedBehavior(final String signCode) {
+        return signCodes.contains(signCode);
+    }
+
+    private String getBehaviorSignCode(final String name,
+                                       final String desc) {
+        final StringBuilder sb = new StringBuilder(256).append(targetJavaClassName).append("#").append(name).append("(");
+
+        final Type[] methodTypes = Type.getMethodType(desc).getArgumentTypes();
+        if (methodTypes.length != 0) {
+            sb.append(methodTypes[0].getClassName());
+            for (int i = 1; i < methodTypes.length; i++) {
+                sb.append(",").append(methodTypes[i].getClassName());
+            }
         }
-        final String[] typeDescArray = new String[typeArray.length];
-        for (int index = 0; index < typeArray.length; index++) {
-            typeDescArray[index] = typeArray[index].getClassName();
-        }
-        return typeDescArray;
-    }
 
-    /*
-     * 是否需要忽略的属性,一些类/方法的前缀说明了他们没有被增强的价值
-     *
-     */
-    private boolean isIgnoreAccess(int access) {
-        return BitUtils.isIn(access,
-                ACC_ABSTRACT,
-                ACC_NATIVE,
-                ACC_ANNOTATION,
-                ACC_BRIDGE,
-                ACC_ENUM,
-                ACC_INTERFACE
-        );
+        return sb.append(")").toString();
     }
-
-    /*
-     * 是否是负责启动的main函数
-     * 这个函数如果被增强了会引起错误,所以千万不能增强,嗯嗯
-     */
-    private boolean isJavaMain(final int access, String name) {
-        return (access & ACC_PUBLIC & ACC_STATIC) == access
-                && StringUtils.equals(name, "main");
-    }
-
-    /*
-     * 是否是静态构造函数,因为静态构造函数只有在Class第一次被加载的时候才会进行执行
-     * 所以这里我并不打算增强这个方法,因为实用价值不高
-     * 等后续有业务需求一定要增强这个类的时候,我再想办法看看
-     */
-    private boolean isStaticInit(String name) {
-        return StringUtils.equals(name, "<clinit>");
-    }
-
-    /**
-     * 是否需要忽略
-     */
-    private boolean isIgnore(MethodVisitor mv, int access, String name, String desc, String[] exceptions) {
-        return null == mv
-                || isIgnoreAccess(access)
-                || isStaticInit(name)
-                || isJavaMain(access, name)
-                || !filter.doMethodFilter(access, name, toJavaClassNameArray(getParameterTypeArray(desc)), toJavaClassNameArray(exceptions), null);
-    }
-
 
     @Override
     public MethodVisitor visitMethod(final int access, final String name, final String desc, final String signature, final String[] exceptions) {
 
         final MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
-        if (isIgnore(mv, access, name, desc, exceptions)) {
-            logger.debug("{}.{} was ignored, listener-id={}", targetClassInternalName, name, listenerId);
+        final String signCode = getBehaviorSignCode(name, desc);
+        if (!isMatchedBehavior(signCode)) {
+            logger.debug("non-rewrite method {} for listener[id={}];",
+                    signCode,
+                    listenerId
+            );
             return mv;
         }
 
-        logger.debug("{}.{} was matched, prepare to rewrite, listener-id={}", targetClassAsmType, name, listenerId);
-
-        // mark reWrite
-        reWriteMark.set(true);
-
-        // 进入方法去重
-        affectMethodUniqueSet.add(uniqueCodePrefix + name + desc + signature);
+        logger.info("rewrite method {} for listener[id={}];event={};",
+                signCode,
+                listenerId,
+                join(eventTypeArray, ",")
+        );
 
         return new ReWriteMethod(api, new JSRInlinerAdapter(mv, access, name, desc, signature, exceptions), access, name, desc) {
 
@@ -236,54 +182,20 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                 pop();
             }
 
-            /**
-             * 加载ClassLoader
-             * 这里分开静态方法中ClassLoader的获取以及普通方法中ClassLoader的获取
-             * 主要是性能上的考虑
-             */
+            // 加载ClassLoader
             private void loadClassLoader() {
-
-                // 这里修改为
                 push(targetClassLoaderObjectID);
-
-//                if (this.isStaticMethod()) {
-//
-////                    // fast enhance
-////                    if (GlobalOptions.isEnableFastEnhance) {
-////                        visitLdcInsn(Type.getType(String.format("L%s;", internalClassName)));
-////                        visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getClassLoader", "()Ljava/lang/ClassLoader;", false);
-////                    }
-//
-//                    // normal enhance
-////                    else {
-//
-//                    // 这里不得不用性能极差的Class.forName()来完成类的获取,因为有可能当前这个静态方法在执行的时候
-//                    // 当前类并没有完成实例化,会引起JVM对class文件的合法性校验失败
-//                    // 未来我可能会在这一块考虑性能优化,但对于当前而言,功能远远重要于性能,也就不打算折腾这么复杂了
-//                    visitLdcInsn(targetJavaClassName);
-//                    invokeStatic(ASM_TYPE_CLASS, ASM_METHOD_Class$forName);
-//                    invokeVirtual(ASM_TYPE_CLASS, ASM_METHOD_Class$getClassLoader);
-////                    }
-//
-//                } else {
-//                    loadThis();
-//                    invokeVirtual(ASM_TYPE_OBJECT, ASM_METHOD_Object$getClass);
-//                    invokeVirtual(ASM_TYPE_CLASS, ASM_METHOD_Class$getClassLoader);
-//                }
-
             }
 
             @Override
             protected void onMethodEnter() {
-
-                isMethodEnter = true;
-                mark(beginLabel);
-
                 codeLockForTracing.lock(new CodeLock.Block() {
                     @Override
                     public void code() {
+                        mark(beginLabel);
                         loadArgArray();
                         dup();
+                        push(namespace);
                         push(listenerId);
                         loadClassLoader();
                         push(targetJavaClassName);
@@ -295,6 +207,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                         storeArgArray();
                         pop();
                         processControl();
+                        isMethodEnter = true;
                     }
                 });
             }
@@ -349,6 +262,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                         @Override
                         public void code() {
                             loadReturn(opcode);
+                            push(namespace);
                             push(listenerId);
                             invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnReturn);
                             processControl();
@@ -373,6 +287,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                     @Override
                     public void code() {
                         loadThrow();
+                        push(namespace);
                         push(listenerId);
                         invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnThrows);
                         processControl();
@@ -393,6 +308,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                         @Override
                         public void code() {
                             push(lineNumber);
+                            push(namespace);
                             push(listenerId);
                             invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnLine);
                         }
@@ -431,6 +347,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                             push(toJavaClassName(owner));
                             push(name);
                             push(desc);
+                            push(namespace);
                             push(listenerId);
                             invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnCallBefore);
                         }
@@ -444,6 +361,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                     codeLockForTracing.lock(new CodeLock.Block() {
                         @Override
                         public void code() {
+                            push(namespace);
                             push(listenerId);
                             invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnCallReturn);
                         }
@@ -469,6 +387,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                     codeLockForTracing.lock(new CodeLock.Block() {
                         @Override
                         public void code() {
+                            push(namespace);
                             push(listenerId);
                             invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnCallReturn);
                         }
@@ -487,6 +406,7 @@ public class EventWeaver extends ClassVisitor implements Opcodes, AsmTypes, AsmM
                         dup();
                         invokeVirtual(ASM_TYPE_OBJECT, ASM_METHOD_Object$getClass);
                         invokeVirtual(ASM_TYPE_CLASS, ASM_METHOD_Class$getName);
+                        push(namespace);
                         push(listenerId);
                         invokeStatic(ASM_TYPE_SPY, ASM_METHOD_Spy$spyMethodOnCallThrows);
                     }

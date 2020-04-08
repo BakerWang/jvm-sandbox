@@ -93,31 +93,36 @@ public interface ConfigInfo {
      * <p>在<b>${SANDBOX_HOME}/cfg/sandbox.properties#event.pool.enable</b>中进行开启关闭</p>
      *
      * @return true:启用;false:不启用
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     boolean isEnableEventPool();
 
     /**
      * 沙箱事件对象池单个事件类型缓存最小数量，{@link #isEnableEventPool()}==true时候有意义
      *
      * @return 单个事件类型缓存最小数量
-     * @deprecated 已经被废弃，推荐使用{@link #getEventPoolMaxIdlePerEvent()}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolKeyMin();
 
     /**
      * 沙箱事件对象池单个事件类型缓存最大数量，{@link #isEnableEventPool()}==true时候有意义
      *
      * @return 单个事件类型缓存最大数量
-     * @deprecated 已被废弃，推荐使用{@link #getEventPoolMaxTotalPerEvent()}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolKeyMax();
 
     /**
      * 沙箱事件对象池所有事件类型缓存最大总数量，{@link #isEnableEventPool()}==true时候有意义
      *
      * @return 所有事件类型缓存最大总数量
-     * @deprecated 已被废弃，推荐使用{@link #getEventPoolMaxTotal()}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolTotal();
 
     /**
@@ -125,7 +130,9 @@ public interface ConfigInfo {
      *
      * @return 事件池最大容量
      * @since {@code sandbox-common-api:1.0.1}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolMaxTotal();
 
     /**
@@ -133,7 +140,9 @@ public interface ConfigInfo {
      *
      * @return 事件池每个事件最小空闲容量
      * @since {@code sandbox-common-api:1.0.1}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolMinIdlePerEvent();
 
     /**
@@ -141,7 +150,9 @@ public interface ConfigInfo {
      *
      * @return 事件池每个事件最大空闲容量
      * @since {@code sandbox-common-api:1.0.1}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolMaxIdlePerEvent();
 
     /**
@@ -149,7 +160,9 @@ public interface ConfigInfo {
      *
      * @return 事件池每个事件最大容量
      * @since {@code sandbox-common-api:1.0.1}
+     * @deprecated 后续不再支持事件池
      */
+    @Deprecated
     int getEventPoolMaxTotalPerEvent();
 
 
@@ -160,6 +173,14 @@ public interface ConfigInfo {
      * @return 沙箱HTTP服务侦听地址
      */
     InetSocketAddress getServerAddress();
+
+    /**
+     * 获取沙箱HTTP服务返回编码
+     *
+     * @return 沙箱HTTP服务返回编码
+     * @since 1.2.2
+     */
+    String getServerCharset();
 
     /**
      * 获取沙箱版本号

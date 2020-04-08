@@ -3,6 +3,7 @@ package com.alibaba.jvm.sandbox.api.resource;
 import com.alibaba.jvm.sandbox.api.event.Event;
 import com.alibaba.jvm.sandbox.api.filter.Filter;
 import com.alibaba.jvm.sandbox.api.listener.EventListener;
+import com.alibaba.jvm.sandbox.api.listener.ext.EventWatchCondition;
 
 /**
  * 事件观察者
@@ -35,6 +36,19 @@ public interface ModuleEventWatcher {
      * @return {@code watchId}，本次观察的唯一编号，{@code watcherId}对象将会是整个操作的唯一KEY，后续删除观察事件的时候也需要通过同一个{@code watcherId}来完成
      */
     int watch(Filter filter, EventListener listener, Event.Type... eventType);
+
+    /**
+     * 观察事件
+     *
+     * @param condition 事件观察条件，只有符合条件的类/方法才会被观察
+     * @param listener  事件监听器
+     *                  观察到的事件将会告知此事件监听器
+     * @param progress  观察渲染进度报告
+     * @param eventType 观察事件类型
+     * @return {@code watchId}，本次观察的唯一编号，{@code watcherId}对象将会是整个操作的唯一KEY，后续删除观察事件的时候也需要通过同一个{@code watcherId}来完成
+     * @since {@code sandbox-api:1.0.10}
+     */
+    int watch(EventWatchCondition condition, EventListener listener, Progress progress, Event.Type... eventType);
 
     /**
      * 删除观察事件
@@ -142,7 +156,7 @@ public interface ModuleEventWatcher {
          * @param clazz 当前进行行变的类
          * @param index 当前形变类的序号,从0开始
          */
-        void progressOnSuccess(Class clazz, int index);
+        void progressOnSuccess(Class<?> clazz, int index);
 
         /**
          * 进度报告(失败)
@@ -151,7 +165,7 @@ public interface ModuleEventWatcher {
          * @param index 当前形变类的序号,从0开始
          * @param cause 失败异常
          */
-        void progressOnFailed(Class clazz, int index, Throwable cause);
+        void progressOnFailed(Class<?> clazz, int index, Throwable cause);
 
         /**
          * 进度结束

@@ -3,9 +3,6 @@
 # sandbox's target dir
 SANDBOX_TARGET_DIR=../target/sandbox
 
-# sandbox's version
-SANDBOX_VERSION=$(cat ..//sandbox-core/src/main/resources/com/alibaba/jvm/sandbox/version)
-
 
 # exit shell with err_code
 # $1 : err_code
@@ -17,7 +14,7 @@ exit_on_err()
 }
 
 # maven package the sandbox
-mvn clean package -Dmaven.test.skip=true -f ../pom.xml \
+mvn clean cobertura:cobertura package -Dmaven.test.skip=false -f ../pom.xml \
     || exit_on_err 1 "package sandbox failed."
 
 # reset the target dir
@@ -26,7 +23,7 @@ mkdir -p ${SANDBOX_TARGET_DIR}/lib
 mkdir -p ${SANDBOX_TARGET_DIR}/module
 mkdir -p ${SANDBOX_TARGET_DIR}/cfg
 mkdir -p ${SANDBOX_TARGET_DIR}/provider
-
+mkdir -p ${SANDBOX_TARGET_DIR}/sandbox-module
 
 # copy jar to TARGET_DIR
 cp ../sandbox-core/target/sandbox-core-*-jar-with-dependencies.jar ${SANDBOX_TARGET_DIR}/lib/sandbox-core.jar \
@@ -36,11 +33,15 @@ cp ../sandbox-core/target/sandbox-core-*-jar-with-dependencies.jar ${SANDBOX_TAR
     && cp sandbox.properties ${SANDBOX_TARGET_DIR}/cfg/sandbox.properties \
     && cp sandbox.sh ${SANDBOX_TARGET_DIR}/bin/sandbox.sh \
     && cp install-local.sh ${SANDBOX_TARGET_DIR}/install-local.sh
+
+# sandbox's version
+SANDBOX_VERSION=$(cat ..//sandbox-core/target/classes/com/alibaba/jvm/sandbox/version)
 echo "${SANDBOX_VERSION}" > ${SANDBOX_TARGET_DIR}/cfg/version
 
-# for test
-## cp ../sandbox-debug-module/target/sandbox-debug-module-*-jar-with-dependencies.jar\
-##     ${SANDBOX_TARGET_DIR}/module/sandbox-debug-module.jar
+# for example
+mkdir -p ${SANDBOX_TARGET_DIR}/example\
+    && cp ../sandbox-debug-module/target/sandbox-debug-module-*-jar-with-dependencies.jar\
+            ${SANDBOX_TARGET_DIR}/example/sandbox-debug-module.jar
 
 # for mgr
 cp ../sandbox-mgr-module/target/sandbox-mgr-module-*-jar-with-dependencies.jar ${SANDBOX_TARGET_DIR}/module/sandbox-mgr-module.jar \

@@ -54,7 +54,10 @@ public class ThreadUnsafeGaStack<E> implements GaStack<E> {
     public E pop() {
         checkForPopOrPeek();
         //noinspection unchecked
-        return (E) elementArray[current--];
+        final E e = (E) elementArray[current];
+        elementArray[current] = null;
+        current--;
+        return e;
     }
 
     @Override
@@ -86,4 +89,16 @@ public class ThreadUnsafeGaStack<E> implements GaStack<E> {
         return (E) elementArray[0];
     }
 
+    @Override
+    public int deep() {
+        return current + 1;
+    }
+
+    public Object[] getElementArray() {
+        return elementArray;
+    }
+
+    public int getCurrent() {
+        return current;
+    }
 }

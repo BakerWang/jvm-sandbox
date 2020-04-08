@@ -1,10 +1,8 @@
 package com.alibaba.jvm.sandbox.core.util;
 
-import com.alibaba.jvm.sandbox.core.enhance.weaver.EventListenerHandlers;
+import com.alibaba.jvm.sandbox.core.enhance.weaver.EventListenerHandler;
 
 import java.com.alibaba.jvm.sandbox.spy.Spy;
-
-import static com.alibaba.jvm.sandbox.core.util.SandboxReflectUtils.unCaughtGetClassDeclaredJavaMethod;
 
 /**
  * Spy类操作工具类
@@ -13,65 +11,27 @@ import static com.alibaba.jvm.sandbox.core.util.SandboxReflectUtils.unCaughtGetC
  */
 public class SpyUtils {
 
-    private static final Initializer isSpyInit = new Initializer();
 
     /**
      * 初始化Spy类
      *
-     * @throws Throwable 初始化失败
+     * @param namespace 命名空间
      */
-    public synchronized static void init() throws Throwable {
+    public synchronized static void init(final String namespace) {
 
-        if (isSpyInit.isInitialized()) {
-            return;
+        if (!Spy.isInit(namespace)) {
+            Spy.init(namespace, EventListenerHandler.getSingleton());
         }
 
-        isSpyInit.initProcess(new Initializer.Processor() {
-            @Override
-            public void process() throws Throwable {
-                Spy.init(
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onBefore",
-                                int.class,
-                                int.class,
-                                Class.class,
-                                String.class,
-                                String.class,
-                                String.class,
-                                Object.class,
-                                Object[].class
-                        ),
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onReturn",
-                                int.class,
-                                Class.class,
-                                Object.class
-                        ),
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onThrows",
-                                int.class,
-                                Class.class,
-                                Throwable.class
-                        ),
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onLine",
-                                int.class,
-                                int.class
-                        ),
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onCallBefore",
-                                int.class,
-                                int.class,
-                                String.class,
-                                String.class,
-                                String.class
-                        ),
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onCallReturn",
-                                int.class
-                        ),
-                        unCaughtGetClassDeclaredJavaMethod(EventListenerHandlers.class, "onCallThrows",
-                                int.class,
-                                String.class
-                        )
-                );
-            }
-        });
+    }
 
+    /**
+     * 清理Spy中的命名空间
+     *
+     * @param namespace 命名空间
+     */
+    public synchronized static void clean(final String namespace) {
+        Spy.clean(namespace);
     }
 
 }

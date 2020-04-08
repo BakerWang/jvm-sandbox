@@ -43,7 +43,7 @@ public class BeforeEvent extends InvokeEvent {
      * @param processId       调用过程ID
      * @param invokeId        调用ID
      * @param javaClassLoader 触发调用事件的ClassLoader
-     * @param javaClassName   触发调用事件的类名称<span>java.lang.String</span>
+     * @param javaClassName   触发调用事件的类名称
      * @param javaMethodName  触发调用事件的方法名称
      * @param javaMethodDesc  触发调用事件的方法签名
      * @param target          触发调用事件的对象(静态方法为null)
@@ -51,9 +51,12 @@ public class BeforeEvent extends InvokeEvent {
      */
     public BeforeEvent(final int processId,
                        final int invokeId,
-                       final ClassLoader javaClassLoader, String javaClassName,
-                       final String javaMethodName, String javaMethodDesc,
-                       final Object target, Object[] argumentArray) {
+                       final ClassLoader javaClassLoader,
+                       final String javaClassName,
+                       final String javaMethodName,
+                       final String javaMethodDesc,
+                       final Object target,
+                       final Object[] argumentArray) {
         super(processId, invokeId, Type.BEFORE);
         this.javaClassLoader = javaClassLoader;
         this.javaClassName = javaClassName;
@@ -61,6 +64,20 @@ public class BeforeEvent extends InvokeEvent {
         this.javaMethodDesc = javaMethodDesc;
         this.target = target;
         this.argumentArray = argumentArray;
+    }
+
+    /**
+     * 改变方法入参
+     *
+     * @param index       方法入参编号(从0开始)
+     * @param changeValue 改变的值
+     * @return this
+     * @since {@code sandbox-api:1.0.10}
+     */
+    public BeforeEvent changeParameter(final int index,
+                                       final Object changeValue) {
+        argumentArray[index] = changeValue;
+        return this;
     }
 
 }

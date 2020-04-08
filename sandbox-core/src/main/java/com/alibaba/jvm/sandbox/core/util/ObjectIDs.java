@@ -28,7 +28,7 @@ public class ObjectIDs {
     /**
      * 对象ID序列生成器，生成范围[1,{@link Integer#MAX_VALUE}]之间的整数
      */
-    private final Sequencer objectIDSequencer = new Sequencer(1);
+    private final Sequencer objectIDSequencer = new Sequencer();
 
     /**
      * 全局读写锁:用于维护世界的和平
@@ -139,8 +139,10 @@ public class ObjectIDs {
      * 映射{@code objectID}为Java对象
      *
      * @param objectID 对象ID
+     * @param <T>      映射回的对象类型
      * @return Java对象
      */
+
     public <T> T getObject(final int objectID) {
 
         if (NULL_ID == objectID) {
